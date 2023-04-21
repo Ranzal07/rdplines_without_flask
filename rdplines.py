@@ -28,6 +28,14 @@ def parallel_rdp(points, eps):
     return result
 
 
+def rdp_threadpool(points, epsilon, chunk_size, max_workers=4):
+    """ RDP algorithm implementation using threadpool """
+    chunks = [points[i:i+chunk_size] for i in range(0, len(points), chunk_size)]
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        results = list(executor.map(classic_rdp, chunks, [epsilon]*len(chunks)))
+    return np.vstack(results)
+
+
 def parallel_rdp_algorithm(data: List[List[float]], epsilon: float, chunk_size: int = None) -> List[List[float]]:
     """
     This is the function where the process of running all the chunks of the original line will happen in a parallel way through the use of multiprocessing's threadpoolexecutor
@@ -85,7 +93,7 @@ def calculate_epsilon(points):
         U.append(ui)
 
     total_ui = sum(U)   # Sums all the perpendicular distance for each points
-    time_interval = (x2 - x1) / num_points    # get the time_interval of points
+    time_interval = 0.001    # get the time_interval of points
     # calculating the dynamic epsilon value
     epsilon = (total_ui * time_interval) / (x2 - x1)
 
@@ -134,19 +142,21 @@ with open(filename, 'r') as file:
     points = np.column_stack([range(len(first_row)), second_row])
 
     # get automatic epsilon value
+    eps_start_time = time.time()
     epsilon = calculate_epsilon(points)
+    eps_end_time = time.time()
 
     # chunk size
     chunk = find_optimal_chunk_size(points)
 
     # get running time for classic rdp
     classic_start_time = time.time()
-    classic_points = rdp(points, epsilon)
+    classic_points = classic_rdp(points, epsilon)
     classic_end_time = time.time()
 
     # parallel results
     parallelized_start_time = time.time()
-    parallelized_points = parallel_rdp_algorithm(points, epsilon, chunk)
+    parallelized_points = rdp_threadpool(points, epsilon, chunk)
     parallelized_end_time = time.time()
 
     # file sizes
@@ -208,6 +218,14 @@ with open(filename, 'r') as file:
 
     # write comparison results
     tol = 0.01  # the tolerance value to compare how close to zero the t statistic
+
+    classic_time = classic_end_time - classic_start_time
+    parallel_time = parallelized_end_time - parallelized_start_time
+
+    if parallel_time < classic_time:
+        print("Parallel RDP is faster than Classic RDP!")
+    else:
+        print("Classic RDP is faster than Parallel RDP!")
 
     if abs(t_statistic) < tol and p_value > 0.05:
         print('Result : There is no significant difference between the two lines\n')
