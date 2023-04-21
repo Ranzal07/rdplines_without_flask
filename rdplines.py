@@ -10,14 +10,12 @@ from scipy.stats import ttest_ind
 
 executor = ThreadPoolExecutor(2)
 
-
 def classic_rdp(points, eps):
     """
     Returns the classic rdp result
     """
     classic_rdp = rdp(points, epsilon=eps)
     return classic_rdp
-
 
 def parallel_rdp(points, eps):
     """
@@ -26,15 +24,6 @@ def parallel_rdp(points, eps):
     future = executor.submit(classic_rdp, points, eps)
     result = future.result()
     return result
-
-
-def rdp_threadpool(points, epsilon, chunk_size, max_workers=4):
-    """ RDP algorithm implementation using threadpool """
-    chunks = [points[i:i+chunk_size] for i in range(0, len(points), chunk_size)]
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        results = list(executor.map(classic_rdp, chunks, [epsilon]*len(chunks)))
-    return np.vstack(results)
-
 
 def parallel_rdp_algorithm(data: List[List[float]], epsilon: float, chunk_size: int = None) -> List[List[float]]:
     """
@@ -156,7 +145,7 @@ with open(filename, 'r') as file:
 
     # parallel results
     parallelized_start_time = time.time()
-    parallelized_points = rdp_threadpool(points, epsilon, chunk)
+    parallelized_points = parallel_rdp_algorithm(points, epsilon, chunk)
     parallelized_end_time = time.time()
 
     # file sizes
