@@ -10,20 +10,23 @@ from scipy.stats import ttest_ind
 
 executor = ThreadPoolExecutor(2)
 
+
 def classic_rdp(points, eps):
     """
     Returns the classic rdp result
     """
-    classic_rdp = rdp(points, epsilon=eps)
-    return classic_rdp
+    res = rdp(points, epsilon=eps)
+    return res
+
 
 def parallel_rdp(points, eps):
     """
     Returns the rdp result for every chunk
     """
-    future = executor.submit(classic_rdp, points, eps)
+    future = executor.submit(rdp, points, epsilon=eps)
     result = future.result()
     return result
+
 
 def parallel_rdp_algorithm(data: List[List[float]], epsilon: float, chunk_size: int = None) -> List[List[float]]:
     """
@@ -68,24 +71,15 @@ def find_optimal_chunk_size(data):
         return 20
 
 
-def calculate_epsilon(points):
-    num_points = len(points)
-    x1, y1 = points[0]  # get the first point of points
-    x2, y2 = points[-1]  # get the last point of points
-
-    # Calculating the perpendicular distance of each point to the line segment
-    U = []    # Store all the perpendicular distance for each points
-    for i in range(num_points):
-        xi, yi = points[i]
-        ui = abs((y2 - y1) * xi - (x2 - x1) * yi + x2 * y1 -
-                 y2 * x1) / ((y2 - y1) * 2 + (x2 - x1) * 2) ** 0.5
-        U.append(ui)
-
-    total_ui = sum(U)   # Sums all the perpendicular distance for each points
-    time_interval = 0.001    # get the time_interval of points
-    # calculating the dynamic epsilon value
-    epsilon = (total_ui * time_interval) / (x2 - x1)
-
+def calculate_epsilon(data):
+    """
+    Find an epsilon value for Ramer-Douglas-Peucker line simplification
+    based on the median absolute deviation (MAD) of the data.
+    """
+    time_interval = 1  # determines the intensity of the change (1 = 100% maximum value for the best epsilon, 0.5 = 50%, 0.1 = 10%)
+    mad = np.median(np.abs(data - np.median(data)))  # MAD
+    # multiplying the mad to the intensity of change to get the epsilon
+    epsilon = mad * time_interval
     return epsilon
 
 
@@ -131,16 +125,17 @@ with open(filename, 'r') as file:
     points = np.column_stack([range(len(first_row)), second_row])
 
     # get automatic epsilon value
-    eps_start_time = time.time()
     epsilon = calculate_epsilon(points)
-    eps_end_time = time.time()
+    # epsilon = 0.5
 
     # chunk size
     chunk = find_optimal_chunk_size(points)
 
+    print(points)
+
     # get running time for classic rdp
     classic_start_time = time.time()
-    classic_points = classic_rdp(points, epsilon)
+    classic_points = rdp(points, epsilon)
     classic_end_time = time.time()
 
     # parallel results
@@ -150,9 +145,9 @@ with open(filename, 'r') as file:
 
     # file sizes
     save_file = save_points_to_csv(
-        points=parallelized_points, filename=filename[10:], columns=cols)
+        points=parallelized_points, filename=filename[14:], columns=cols)
     directory = 'simplified/' + \
-        filename[10:].split('.')[0] + '(simplified).csv'
+        filename[14:].split('.')[0] + '(simplified).csv'
 
     original_file_size = 0
     parallel_file_size = 0
@@ -162,23 +157,24 @@ with open(filename, 'r') as file:
         parallel_file_size = get_file_size(directory)
 
     # calculate mean
+    original_mean = np.mean(np.mean(points, axis=0)[1])
     classic_mean = np.mean(np.mean(classic_points, axis=0)[1])
     parallelized_mean = np.mean(np.mean(parallelized_points, axis=0)[1])
 
     # calculate standard deviation
+    original_standard_deviation = np.std(points, ddof=1)
     classic_standard_deviation = np.std(classic_points, ddof=1)
     parallelized_standard_deviation = np.std(parallelized_points, ddof=1)
 
     # calculate the t statistic
-    t_statistic, p_value = ttest_ind([point[0] for point in classic_points], [
+    t_statistic, p_value = ttest_ind([point[0] for point in points], [
                                      point[0] for point in parallelized_points])
 
     # print out information
     print('\nEpsilon value = ' + str(epsilon))
 
-    print('\nNumber of points in original line : ' + str(len(points)))
-    print('Number of points in simplified line : ' +
-          str(len(parallelized_points)))
+    # print(classic_points)
+    # print(parallelized_points)
 
     print('\nFile size of original line : ' +
           str(original_file_size) + ' KB')
@@ -190,13 +186,22 @@ with open(filename, 'r') as file:
     print('Running time of parallelRDP : ' +
           str(parallelized_end_time - parallelized_start_time))
 
-    print('\nMean of original line : ' + str(classic_mean))
-    print('Mean of simplified line : ' +
+    print('\nNumber of points in original line : ' + str(len(points)))
+    print('Number of points in classic rdp line : ' +
+          str(len(classic_points)))
+    print('Number of points in parallel rdp line : ' +
+          str(len(parallelized_points)))
+
+    print('\nMean of original line : ' + str(original_mean))
+    print('Mean of classic rdp line : ' + str(classic_mean))
+    print('Mean of parallel rdp line : ' +
           str(parallelized_mean))
 
     print('\nStandard deviation of original line : ' +
+          str(original_standard_deviation))
+    print('Standard deviation of classic rdp line : ' +
           str(classic_standard_deviation))
-    print('Standard Deviation of simplified line : ' +
+    print('Standard Deviation of parallel rdp line : ' +
           str(parallelized_standard_deviation))
 
     print('\nT statistic : ' +
@@ -206,15 +211,7 @@ with open(filename, 'r') as file:
     print('\n')
 
     # write comparison results
-    tol = 0.01  # the tolerance value to compare how close to zero the t statistic
-
-    classic_time = classic_end_time - classic_start_time
-    parallel_time = parallelized_end_time - parallelized_start_time
-
-    if parallel_time < classic_time:
-        print("Parallel RDP is faster than Classic RDP!")
-    else:
-        print("Classic RDP is faster than Parallel RDP!")
+    tol = 0.05  # the tolerance value to compare how close to zero the t statistic
 
     if abs(t_statistic) < tol and p_value > 0.05:
         print('Result : There is no significant difference between the two lines\n')
